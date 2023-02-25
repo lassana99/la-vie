@@ -1,0 +1,122 @@
+/*
+ * TP_ADC10.c
+ *
+ * Created: 31/05/2022 19:28:36
+ * Author : CAMARA ABOUBACAR
+			DEMBE LASSANA
+			NIKIEMA JOSHUA YUN PEI E. JUSTE
+ */ 
+
+#include <avr/io.h>
+#define F_CPU 16000000UL
+#include "util/delay.h"
+#include <stdlib.h>
+#include <avr/interrupt.h>
+#include "C:\Users\nikie\OneDrive\Documents\juste\Semestre2\Architecture des calculateurs\Architecture/lcd_4bits.h"
+#define S1 0x01 // PD0 INT0
+#define S2 0x02 // PD1 INT1
+#define S3 0x04 // PD2 INT2
+//#define S4 0x08 // PD3
+unsigned char ref = 0;
+float calibre = 5;
+unsigned int resultat = 1;
+float mesure;
+unsigned int diviseur;
+char tampon[4];
+
+void init_bouton(void)
+{
+	
+	DDRD &= ~(S1 + S2 + S3); // ligne de S1, S2 et S3 en entrée
+	EICRB |= (1 << ISC01) + (1 << ISC11) + (1 << ISC21);// Détection des fronts descants
+	EIMSK |= (1 << INT0) + (1 << INT1) + (1 << INT2);// Activation local des INTn (n:0 2)
+	EIFR |= (1 << INTF0) + (1 << INTF1) + (1 << INTF2);// Positionnement des drapeaux (remise du drapeau à 0)
+}
+
+unsigned int read_ADC10(unsigned char input_channel, unsigned char reference)
+{
+	switch(reference)
+	{
+		case 0:
+				if(input_channel < 8)
+				{
+					ADMUX = (1 << REFS0) + input_channel;//choix de AVCC = 5V pour tension de reference et voie à convertir (0 à 7)
+					DIDR0 = (1 << input_channel); // Activation des E/S numériques pour les voies ADC0 à ADC7 
+				}
+				else
+				{
+					ADMUX = (1 << REFS0) + (input_channel - 8);//choix de AVCC = 5V pour tension de reference et voie à convertir (8 à 15)
+					ADCSRB = (1 << MUX5);
+					DIDR2 = (1 << (input_channel - 8));// Activation des E/S numériques pour les voies ADC8 à ADC15 
+				}
+			break;
+		case 1:
+				if(input_channel < 8)
+				{
+					ADMUX = (1 << REFS1) + input_channel;//choix de AVCC = 1,1V pour tension de reference et voie à convertir (0 à 7)
+					DIDR0 = (1 << input_channel);
+				}
+				else
+				{
+					ADMUX = (1 << REFS1) + (input_channel - 8);//choix de AVCC = 1,1V pour tension de reference et voie à convertir (8 à 15)
+					ADCSRB = (1 << MUX5);
+					DIDR2 = (1 << (input_channel - 8));
+				}
+			break;
+		case 2:
+				if(input_channel < 8)
+				{
+					ADMUX = (1 << REFS0) + (1 << REFS1) + input_channel;//choix de AVCC = 2,56V pour tension de reference et voie à convertir (0 à 7)
+					DIDR0 = (1 << input_channel);
+				}
+				else
+				{
+					ADMUX = (1 << REFS0) + (1 << REFS1) + (input_channel - 8);//choix de AVCC = 2,56V pour tension de reference et voie à convertir (8 à 15)
+					ADCSRB = (1 << MUX5);
+					DIDR2 = (1 << (input_channel - 8));
+				}
+			break;			
+	}
+	ADCSRA = (1 << ADEN) + ( 1 << ADPS2 ) + (1 << ADPS1) + (1 << ADPS0);// Activation du convertisseur, choix du facteur de prédivision 128
+	ADCSRA |= (1 << ADSC); //Mise à 1 = Démarrage des conversions; reste à 1 tant que la conversion n’est pas terminée
+	while(ADCSRA & (1 << ADSC)); // Période durant la conversion est en train de s'effectuer.  Lorsque la condition sera fausse cela signifiera que la conversion est terminée
+	return (ADCL + (ADCH << 8));
+}
+
+
+ISR(INT0_vect)// interuption déclenchée par l'appui du boutton S1 pour le choix de AVCC = 5V
+{
+	ref = 0;
+	calibre = 5;
+}
+ISR(INT1_vect)// interuption déclenchée par l'appui du boutton S2 pour le choix de AVCC = 1,1V
+{
+	ref = 1;
+	calibre = 1.1;
+}
+
+ISR(INT2_vect)// interuption déclenchée par l'appui du boutton S3 pour le choix de AVCC = 2,56V
+{
+	ref = 2;
+	calibre = 2.56;
+}
+
+
+int main(void)
+{
+	init_bouton();// fonction d'activation des boutons ainsi que la configuration des interruptions
+	init_LCD();
+	Write_LCD("Test ADC10");
+	pos_xy(1,2);
+	Write_LCD("U0 =      V");
+	ref = 0;
+	sei();
+	while (1)
+	{
+		resultat = read_ADC10(8, ref);
+		mesure = (calibre*resultat)/1023.0;//calcul de la tension
+		dtostrf(mesure,4,2,tampon);
+		pos_xy(6,2);
+		Write_LCD(tampon);
+	}
+}
